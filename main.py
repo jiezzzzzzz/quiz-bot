@@ -1,6 +1,6 @@
 import logging
 
-
+import telegram
 from telegram import Update, ForceReply
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
@@ -10,12 +10,17 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+custom_keyboard = [['кнопка раз', 'кнопка двас'],
+                   ['кнопка трис', 'кнопка четырес']]
+
 
 def start(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
+    reply_markup = telegram.ReplyKeyboardMarkup(custom_keyboard)
     update.message.reply_markdown_v2(
         fr'Здравствуйте\!',
-        reply_markup=ForceReply(selective=True),
+        reply_markup=reply_markup,
+
     )
 
 
