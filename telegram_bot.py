@@ -1,21 +1,20 @@
 import functools
+import json
 import logging
+import os
 import random
-import re
-from environs import Env
+import textwrap
 
 import redis
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import (
-    Updater,
-    CommandHandler,
-    MessageHandler,
-    RegexHandler,
-    Filters,
-    ConversationHandler
-)
+from telegram.ext import CommandHandler
+from telegram.ext import ConversationHandler
+from telegram.ext import Filters
+from telegram.ext import MessageHandler
+from telegram.ext import RegexHandler
+from telegram.ext import Updater
 
-from load_questions import load_questions
+from get_user_answers import remove_comments, get_answer
 
 
 logger = logging.getLogger(__name__)
@@ -23,67 +22,70 @@ logger = logging.getLogger(__name__)
 CHOOSING, ATTEMPT = range(2)
 
 
-def remove_comments(answer):
-    return re.sub("[\(\[].*?[\)\]]", "", answer).strip()
-
-
 def start(bot, update):
-    keyboard = [['Новый вопрос', 'Сдаться'], ['Cчёт']]
+    keyboard = [['Новый вопрос', 'Сдаться']]
     kb_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    start_message = (
-        'Даров! Жми "новый вопрос", чтобы начать викторину,.\n'
-        '/cancel - для отмены.'
+    start_message = textwrap.dedent(
+        '''\
+        Приветствую! Нажмите «Новый вопрос» для начала викторины.
+        /cancel - для отмены.
+        '''
     )
     update.message.reply_text(start_message, reply_markup=kb_markup)
 
     return CHOOSING
 
 
-def handle_solution_request(bot, update, questions, redis_conn):
-    question = random.choice(list(questions.keys()))
-
-    logger.debug(
-        f'user_id: {update.message.from_user.id}. '
-        f'Question: {question} '
-        f'Answer: {questions.get(question)}'
+def handle_new_question_request(bot, update, redis_conn):
+    question_num = random.choice(redis_conn.hkeys('questions'))
+    redis_conn.hset(
+        'users',
+        f'user_tg_{update.message.from_user.id}',
+        json.dumps({'last_asked_question': question_num})
     )
 
-    redis_conn.set(update.message.from_user.id, question)
+    qa = json.loads(redis_conn.hget('questions', question_num))
+    question = qa.get('question')
+
+    logger.debug(
+        f'question: {question} '
+        f'answer: {qa.get("answer")}'
+    )
+
     update.message.reply_text(question)
 
     return ATTEMPT
 
 
-def handle_solution_attempt(bot, update, questions, redis_conn):
-    current_question = redis_conn.get(update.message.from_user.id)
-    answer = questions.get(current_question)
+def handle_solution_attempt(bot, update, redis_conn):
+    user_id = update.message.from_user.id
+    answer = get_answer(user_id, redis_conn)
     user_response = update.message.text
     correct_answer = remove_comments(answer).lower().strip('.')
 
     logger.debug(
-        f'User response: {user_response} '
-        f'Correct answer: {correct_answer}'
+        f'user_response: {user_response.lower()} '
+        f'correct_answer: {correct_answer} '
     )
 
     if user_response.lower() == correct_answer:
         update.message.reply_text(
-            'Ура все верно '
-            'Тыкай в "новый вопрос", чтобы продолжить'
+            'Правильно! Поздравляю! '
+            'Для следующего вопроса нажми «Новый вопрос».'
         )
         return CHOOSING
     else:
-        update.message.reply_text('Неправильно. Пробовать еще раз не советую, но ты можешь')
+        update.message.reply_text('Неправильно. Попробуешь ещё раз?')
 
         return ATTEMPT
 
 
-def handle_give_up(bot, update, questions, redis_conn):
-    current_question = redis_conn.get(update.message.from_user.id)
-    answer = questions.get(current_question)
+def handle_give_up(bot, update, redis_conn):
+    user_id = update.message.from_user.id
+    answer = get_answer_question(user_id, redis_conn)
     update.message.reply_text(
         f'Вот тебе правильный ответ: {answer} '
-        'Чтобы продолжить нажми "Новый вопрос"'
-        'или иди поплачь'
+        'Чтобы продолжить нажми «Новый вопрос»'
     )
 
     return CHOOSING
@@ -91,7 +93,7 @@ def handle_give_up(bot, update, questions, redis_conn):
 
 def cancel(bot, update):
     update.message.reply_text(
-        f'Покедова, {update.message.from_user.first_name}!',
+        f'До свидания, {update.message.from_user.first_name}!',
         reply_markup=ReplyKeyboardRemove()
     )
     return ConversationHandler.END
@@ -101,15 +103,10 @@ def error(bot, update, error):
     logger.warning('Update "%s" caused error "%s"', update, error)
 
 
-def main():
-    env = Env()
-    env.read_env()
-    questions = load_questions()
-
-    tg_token = env('TELEGRAM_TOKEN')
-    redis_host = env('REDIS_HOST')
-    redis_port = env('REDIS_PORT')
-    redis_password = env('REDIS_PASSWORD')
+def run_chatbot(token):
+    redis_host = os.getenv('REDIS_HOST')
+    redis_port = os.getenv('REDIS_PORT')
+    redis_password = os.getenv('REDIS_PASSWORD')
 
     redis_conn = redis.Redis(
         host=redis_host,
@@ -119,29 +116,26 @@ def main():
         decode_responses=True
     )
 
-    updater = Updater(tg_token)
+    updater = Updater(token)
 
-    dp = updater.dispatcher
+    handlers_dispatcher = updater.dispatcher
 
     handle_new_question = functools.partial(
-        handle_solution_request,
-        questions=questions,
+        handle_new_question_request,
         redis_conn=redis_conn
     )
 
     handle_solution = functools.partial(
         handle_solution_attempt,
-        questions=questions,
         redis_conn=redis_conn
     )
 
-    give_up_handle = functools.partial(
+    give_up_handle= functools.partial(
         handle_give_up,
-        questions=questions,
         redis_conn=redis_conn
     )
 
-    conv_handler = ConversationHandler(
+    conversation_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
 
         states={
@@ -157,19 +151,26 @@ def main():
 
     )
 
-    dp.add_handler(conv_handler)
-
-    dp.add_error_handler(error)
+    handlers_dispatcher.add_handler(conversation_handler)
+    handlers_dispatcher.add_error_handler(error)
 
     updater.start_polling()
-
     updater.idle()
 
 
-if __name__ == '__main__':
-    logging.getLogger(__name__).setLevel(logging.DEBUG)
+def main():
+    env = Env()
+    env.read_env()
+
+    logging.getLogger(__name__).setLevel(logging.INFO)
     logging.basicConfig(
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         level=logging.INFO
     )
+    tg_token = env('TELEGRAM_TOKEN')
+
+    run_chatbot(tg_token)
+
+
+if __name__ == '__main__':
     main()
