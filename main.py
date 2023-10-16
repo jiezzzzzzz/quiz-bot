@@ -1,6 +1,9 @@
 import logging
-
+import redis
+import random
 import telegram
+import os
+from environs import Env
 from telegram import Update, ForceReply
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
@@ -10,40 +13,59 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-custom_keyboard = [['кнопка раз', 'кнопка двас'],
-                   ['кнопка трис', 'кнопка четырес']]
 
-
-def start(update: Update, context: CallbackContext) -> None:
-    user = update.effective_user
-    reply_markup = telegram.ReplyKeyboardMarkup(custom_keyboard)
-    update.message.reply_markdown_v2(
-        fr'Здравствуйте\!',
-        reply_markup=reply_markup,
-
+def start(bot, update: Update) -> None:
+    keyboard = [['Новый вопрос', 'Сдаться'], ['Мой счёт']]
+    reply_markup = telegram.ReplyKeyboardMarkup(keyboard, resize_keyboard=True
+                                                )
+    bot.message.reply_text(
+        chat_id=update.message.chat_id,
+        text='Привет! Повикторинимся? :)',
+        reply_markup=reply_markup
     )
 
 
-def echo(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text(update.message.text)
+def ask(bot, update, questions, redis_conn):
+    if update.message.text == 'Новый вопрос':
+        question, answer = random.choice(list(questions.items()))
+        update.message.reply_text(question)
+        redis_conn.set(
+            update.message.from_user.id,
+            question
+        )
+        r = redis_conn.get(update.message.from_user.id)
+        update.message.reply_text(questions.get(r.decode("utf-8")))
+
+        logger.debug(f'{update.message.from_user.id} {question} {answer}')
 
 
 def main() -> None:
-    updater = Updater("5728727104:AAFPQl8McbB_DVlJqW56dseqS1uoHQFKWHc")
+    env = Env()
+    env.read_env()
+    tg_token = env('TELEGRAM_TOKEN')
+    redis_host = env('REDIS_HOST')
+    redis_port = env('REDIS_PORT')
+    redis_password = env('REDIS_PASSWORD')
+
+    redis_connection = redis.Redis(
+        host=redis_host,
+        port=redis_port,
+        password=redis_password,
+        db=0
+    )
+
+    updater = Updater(tg_token)
 
     dispatcher = updater.dispatcher
 
     dispatcher.add_handler(CommandHandler("start", start))
 
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, echo))
+    #dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, echo))
 
     updater.start_polling()
 
     updater.idle()
 
-
-if __name__ == '__main__':
-    main()
 
 if __name__ == '__main__':
     main()
