@@ -38,11 +38,11 @@
 
 1. Скачать репу себе на машину:
 
-   git clone https://github.com/jiezzzzzzz/quiz-bot
+   <code>git clone https://github.com/jiezzzzzzz/quiz-bot</code>
 
 2. Установить зависимости
 
-   pip install -r requirements.txt
+   <code>pip install -r requirements.txt</code>
 
 3. Создать базу в Redislabs (опционально). Получить адрес базы данных вида:
 <code>redis-13965.f18.us-east-4-9.wc1.cloud.redislabs.com</code>, его порт вида: 16635(порт указан прямо в адресе, через двоеточие) и его пароль.
@@ -55,6 +55,6 @@
 
 7. Запустить:
 
-   python telegram_bot.py
+   <code>python telegram_bot.py</code>
 
-   python vk_bot.py
+   <code>python vk_bot.py</code>
