@@ -4,7 +4,6 @@ from environs import Env
 import random
 import sys
 import textwrap
-
 import redis
 import vk_api
 
