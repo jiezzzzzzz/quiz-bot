@@ -4,7 +4,8 @@ import redis
 from environs import Env
 
 
-def read_koi_files(file_path, file_encoding='KOI8-R'):
+def read_koi_files(file_encoding='KOI8-R'):
+    file_path = input('Введите путь к файлу: ')
     with open(file_path, 'r', encoding=file_encoding) as file:
         text = file.read()
         return text
