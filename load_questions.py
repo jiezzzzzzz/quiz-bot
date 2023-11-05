@@ -1,14 +1,16 @@
 import json
-import os
+import argparse
 import redis
 from environs import Env
 
 
-def read_koi_files(directory='quiz/questions', file_encoding='KOI8-R'):
-    for file in os.listdir(os.path.abspath(directory)):
-        with open(f'{directory}/{file}', 'r', encoding=file_encoding) as file:
-            text = file.read()
-            yield text
+def read_koi_files(file_encoding='KOI8-R'):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('file_name', help='введите имя файла')
+    args = parser.parse_args()
+    with open(args.file_name, 'r', encoding=file_encoding) as file:
+        text = file.read()
+        return text
 
 
 def redis_load_question(redis_conn, hash_name='questions'):
