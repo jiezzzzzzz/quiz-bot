@@ -4,11 +4,11 @@ import redis
 from environs import Env
 
 
-def read_koi_files(file_encoding='KOI8-R'):
+def read_koi_files(encoding='KOI8-R'):
     parser = argparse.ArgumentParser()
     parser.add_argument('file_name', help='введите имя файла')
     args = parser.parse_args()
-    with open(args.file_name, 'r', encoding=file_encoding) as file:
+    with open(args.file_name, 'r', encoding=encoding) as file:
         text = file.read()
         return text
 
